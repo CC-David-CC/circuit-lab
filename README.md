@@ -20,11 +20,13 @@ archive is about 48.5 MB and is fetched only when requested, not on app launch.
 
 **Do not deploy this candidate until the source package, notices, and LGPL
 relinking approach receive final distribution review.** A cleaned source and
-relink package was technically tested from a separate extracted directory with
-the original build tree unavailable. It includes modified and original source,
-linkable objects, build scripts and notices. The test rebuilt a modified LGPL
-`numparam` library, relinked it, verified the modified text in the resulting
-WASM, and solved the 5 V divider. The independently relinked engine also passed
+relink package is tested from a separate extracted directory with the original
+build tree unavailable. It includes modified source, exact original ngspice
+and wrapper source, linkable objects, scripts and notices. The test rebuilds a
+modified LGPL `numparam` library, relinks it, verifies its change in the
+resulting WASM, and solves the 5 V divider. A separate attempt to verify a KLU
+modification did not find the expected marker in the binary; KLU relinking is
+not yet verified. The independently relinked engine also passed
 an isolated actual account-server save/sync and fresh phone-sized browser
 reopen test. These are technical checks, not a legal determination.
 
@@ -34,6 +36,14 @@ packages. It is not a different operating system, a second physical machine,
 or an offline-from-empty-machine test. Two clean builds in the same environment
 produced identical WASM and wrapper hashes; cross-platform reproducibility is
 not established. Phone-sized testing used viewport emulation.
+
+The upstream EEcircuit model cards are important future capability and are
+preserved for local development. The current prototype does not yet expose
+them: the source build disables model-card injection and `.include` / `.lib`
+are blocked. The preserved source includes PTM data identified as Arizona
+State University property without an explicit redistribution license in that
+file. Do not publish those models until their terms have been verified. See
+`MODELS.md` for the library-by-library findings and local preservation steps.
 
 The ngspice configuration disables XSPICE, OSDI and CIDER, but enables KLU and
 `frontend/numparam`, identified as LGPL in the
@@ -54,10 +64,11 @@ On the verified Linux x86-64 environment, install and activate Emscripten
 CODI_EMSDK=/absolute/path/to/emsdk apps/system/circuit-lab/build-source.sh
 npm test --prefix apps/system/circuit-lab
 curl -fL https://people.engr.tamu.edu/davis/SuiteSparse/SuiteSparse-3.7.0.tar.gz -o .build/suitesparse-3.7.0.tar.gz
-python3 apps/system/circuit-lab/package-source.py --output apps/system/circuit-lab/node_modules/codi-ngspice/source-relink.zip
+python3 apps/system/circuit-lab/package-source.py --research-allow-unreviewed-models --output apps/system/circuit-lab/node_modules/codi-ngspice/source-relink.zip
 ```
 
-The final command validates the SuiteSparse notice archive, checks that the
+The final command is for **local research only** and includes full model source
+whose redistribution terms remain unresolved. It validates the SuiteSparse notice archive, checks that the
 installed wrapper matches the just-built source tree, and creates the on-demand
 archive and adjacent `NOTICES.txt`. The normal app builder then includes both
 explicitly declared assets. Package only after all source changes are final,
@@ -111,6 +122,17 @@ rebuilds the LGPL component in a temporary copy, relinks, and runs the example.
 Its `relinked/` output is a test artifact; it is not the original candidate.
 The tested archive scan found no workstation home-directory references or
 private database/key files.
+
+`python3 apps/system/circuit-lab/test-audit-package.py` runs negative checks
+for the technical release gate. `package-source.py` automatically runs
+`audit-package.py`, which checks that the wrapper embeds the packaged WASM,
+compares notices to pinned sources, checks required relink objects, binds the
+installed engine to the source package, and checks every preserved model and
+example file against upstream. After the app builder runs, use
+`python3 apps/system/circuit-lab/audit-builder.py OUTPUT_DIRECTORY` to check
+the actual bundled worker, catalog, source archive and notices together. For
+the isolated `arduino-simulator` test alias, add `--app-id arduino-simulator`.
+These are technical checks, not a substitute for distribution review.
 
 `tests/circuit-account-browser.test.mjs` exercises a loopback-only isolated
 preview, actual account-server synchronization, a fresh phone-sized browser,

@@ -1,6 +1,7 @@
 export const EXAMPLES = {
   divider: `Voltage divider\nV1 in 0 DC 10\nR1 in out 1k\nR2 out 0 1k\n.op\n.end\n`,
   rc: `RC step response\nV1 in 0 PULSE(0 5 0 1n 1n 10m 20m)\nR1 in out 1k\nC1 out 0 1u\n.tran 20u 5m\n.end\n`,
+  mos: `Basic NMOS operating point\nVDD vdd 0 DC 5\nVG gate 0 DC 3\nR1 vdd drain 1k\nM1 drain gate 0 0 NMOD W=1u L=1u\n.model NMOD NMOS (LEVEL=1 VTO=1 KP=100u LAMBDA=0)\n.op\n.end\n`,
 };
 
 // Keep initial experiments self-contained: ngspice's interactive command and

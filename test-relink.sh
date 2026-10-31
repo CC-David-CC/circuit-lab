@@ -30,7 +30,8 @@ emmake make -C "$scratch/$ng/release/src" -j2 ngspice >> "$scratch/relink.log" 2
 python3 - "$scratch/$ng/release/src/spice.wasm" <<'PY'
 from pathlib import Path
 import sys
-if b'RELINK-CODI-EXPERIMENT' not in Path(sys.argv[1]).read_bytes():raise RuntimeError('modified LGPL object was not linked')
+data=Path(sys.argv[1]).read_bytes()
+if b'RELINK-CODI-EXPERIMENT' not in data:raise RuntimeError('modified numparam object was not linked')
 PY
 cp "$scratch/$ng/release/src/spice.wasm" "$scratch/$ee/src/spice.wasm"
 cp "$scratch/$ng/release/src/spice.mjs" "$scratch/$ee/src/spice.js"

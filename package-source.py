@@ -1,12 +1,13 @@
 #!/usr/bin/env python3
 """Create a research-only source/relink bundle from a completed pinned build."""
-import argparse, hashlib, json, os, pathlib, tarfile, zipfile
+import argparse, hashlib, json, os, pathlib, runpy, tarfile, zipfile
 
 APP = pathlib.Path(__file__).resolve().parent
 ROOT = APP.parents[2]
 NG = 'ngspice-sf-mirror-ngspice-45.2'
 EE = 'EEcircuit-engine-424c21eb9f9bb91e72c1befe2d7fc2f09641316c'
-EXPECTED = {'ngspice.tar.gz':'3aa30022e975bc04e2d9566e62e76d15e108d7b887f520755383ba37464c2324','engine.tar.gz':'e847152a73df19d7a3ece07cd60c63ec7e47e038d2dd615d5dd5cce0515e8d6b'}
+ORIGINAL_ENGINE_SHA='e847152a73df19d7a3ece07cd60c63ec7e47e038d2dd615d5dd5cce0515e8d6b'
+EXPECTED = {'ngspice.tar.gz':'3aa30022e975bc04e2d9566e62e76d15e108d7b887f520755383ba37464c2324','engine.tar.gz':ORIGINAL_ENGINE_SHA}
 SUITESPARSE_SHA = '3340ec0508d0680451bcc7d7581d04942c58b07cc71dfb7e13d0718060c911d9'
 
 def main():
@@ -15,7 +16,11 @@ def main():
     ap.add_argument('--sdk',type=pathlib.Path,default=ROOT/'.build/ngspice-emsdk')
     ap.add_argument('--suitesparse',type=pathlib.Path,default=ROOT/'.build/suitesparse-3.7.0.tar.gz')
     ap.add_argument('--output',type=pathlib.Path,required=True)
+    ap.add_argument('--research-allow-unreviewed-models',action='store_true',help='Create a local research-only archive containing model data with unresolved redistribution terms')
     args=ap.parse_args();work=args.work.resolve();sdk=args.sdk.resolve();out=args.output.resolve()
+    if not args.research_allow_unreviewed_models:raise RuntimeError('Model redistribution review is unresolved; only explicitly requested local research packaging is permitted')
+    raw_engine=(work/'engine.tar.gz').read_bytes()
+    if hashlib.sha256(raw_engine).hexdigest()!=ORIGINAL_ENGINE_SHA:raise RuntimeError('Original wrapper source archive hash mismatch')
     sources={name:work/name for name in EXPECTED}
     for name,digest in EXPECTED.items():
         if hashlib.sha256(sources[name].read_bytes()).hexdigest()!=digest: raise RuntimeError('source archive hash mismatch: '+name)
@@ -37,7 +42,7 @@ def main():
         for p in sorted((work/tree).rglob('*')):
             if not p.is_file() or p.name=='config.log' or any(s in {'node_modules','.git','autom4te.cache','.deps'} for s in p.relative_to(work/tree).parts):continue
             put('work/'+p.relative_to(work).as_posix(),p)
-    for name in ['README.md','package.json','package-lock.json','index.mjs','style.css','app.json','netlist.mjs','worker.mjs','test-netlist.mjs','build-source.sh','test-relink.sh','package-source.py','verify-portable.sh']:
+    for name in ['README.md','MODELS.md','package.json','package-lock.json','index.mjs','style.css','app.json','netlist.mjs','worker.mjs','test-netlist.mjs','build-source.sh','test-relink.sh','package-source.py','verify-portable.sh','audit-package.py','audit-builder.py','test-audit-package.py','prepare-models.py']:
         p=APP/name
         if p.exists():put('app/'+name,p)
     browser_test=ROOT/'tests/circuit-account-browser.test.mjs'
@@ -46,6 +51,7 @@ def main():
       'ngspice-COPYING.txt':work/NG/'COPYING',
       'EEcircuit-engine-MIT.txt':work/EE/'LICENSE',
       'numparam-README.txt':work/NG/'src/frontend/numparam/readme.txt',
+      'FreePDK-APACHE-LICENSE-2.0.txt':work/EE/'src/models/freepdk/APACHE-LICENSE-2.0.txt',
       'Emscripten-LICENSE.txt':sdk/'upstream/emscripten/LICENSE',
       'musl-COPYRIGHT.txt':sdk/'upstream/emscripten/system/lib/libc/musl/COPYRIGHT',
       'compiler-rt-LICENSE.txt':sdk/'upstream/emscripten/system/lib/compiler-rt/LICENSE.TXT',
@@ -65,6 +71,8 @@ def main():
       'clangSha256':digest(sdk/'upstream/bin/clang'),
       'wasmLdSha256':digest(sdk/'upstream/bin/wasm-ld'),
       'suiteSparseNoticeArchiveSha256':SUITESPARSE_SHA,
+      'engineOriginalArchiveSha256':ORIGINAL_ENGINE_SHA,
+      'modelLicenses':'unreviewed',
       'warning':'Research only: legal completeness and clean-room reproducibility are not established.'}
     out.parent.mkdir(parents=True,exist_ok=True)
     with zipfile.ZipFile(out,'w',compression=zipfile.ZIP_DEFLATED,compresslevel=9) as z:
@@ -94,8 +102,17 @@ def main():
     print(f'Packaged {len(files)} files, {out.stat().st_size} bytes: {out}')
     print('SHA-256',hashlib.sha256(out.read_bytes()).hexdigest())
     with zipfile.ZipFile(out) as z:
-        names=sorted(n for n in z.namelist() if n.startswith('notices/') and n.endswith('.txt'))
+        names=sorted(n for n in z.namelist() if n.startswith('notices/') and not n.endswith('/'))
         notices='\n'.join('\n===== '+name+' =====\n'+z.read(name).decode('utf-8',errors='replace') for name in names)
-    (out.parent/'NOTICES.txt').write_text(notices,encoding='utf-8')
+    notice_path=out.parent/'NOTICES.txt'
+    notice_path.write_text(notices,encoding='utf-8')
+    try:
+        auditor=runpy.run_path(str(APP/'audit-package.py'))['audit']
+        auditor(out,installed,notice_path)
+    except Exception:
+        out.unlink(missing_ok=True)
+        notice_path.unlink(missing_ok=True)
+        raise
+    print('PASS technical package audit; final distribution review remains required.')
 
 if __name__=='__main__':main()
