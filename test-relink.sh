@@ -43,3 +43,8 @@ const r=await s.runSim(),v=r.data.find(x=>x.name==='v(out)').values[0];
 if(Math.abs(v-5)>1e-8)throw Error('wrong divider result');
 console.log('PASS modified numparam was relinked and still simulates 5 V');process.exit(0);
 JS
+if [[ -n ${CODI_RELINK_OUTPUT:-} ]]; then
+  mkdir -p "$CODI_RELINK_OUTPUT"
+  cp "$scratch/$ng/release/src/spice.wasm" "$CODI_RELINK_OUTPUT/spice.wasm"
+  cp "$scratch/$ee/dist/eecircuit-engine.mjs" "$CODI_RELINK_OUTPUT/eecircuit-engine.mjs"
+fi

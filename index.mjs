@@ -48,6 +48,9 @@ export function mount(host) {
   toolbar.append(textButton('Voltage divider',()=>{if(replace(EXAMPLES.divider))tell('Voltage divider example loaded.');}),textButton('RC step',()=>{if(replace(EXAMPLES.rc))tell('RC step example loaded.');}),textButton('Open My files',open),textButton('Run',run),textButton('Stop',()=>{cancel();tell('Simulation stopped.');}));
   const savebar=make('div','circuit-toolbar');savebar.append(path,textButton('Save to My files',save));
   const note=make('p','circuit-note','Experimental SPICE netlist simulator running on your device. This is a text-based circuit editor, not a graphical schematic editor.');
+  const sourceLink=document.createElement('a');sourceLink.href=new URL('./node_modules/codi-ngspice/source-relink.zip',import.meta.url).href;sourceLink.textContent='Source and relinking materials';
+  const noticeLink=document.createElement('a');noticeLink.href=new URL('./node_modules/codi-ngspice/NOTICES.txt',import.meta.url).href;noticeLink.textContent='License notices';
+  note.append(' ',sourceLink,' · ',noticeLink);
   body.append(toolbar,note,input,source,savebar,status,canvas,table);
   return {element:body,dispose(){disposed=true;cancel();}};
 }

@@ -1,109 +1,126 @@
-# Circuit Lab — research prototype, do not ship
+# Circuit Lab — source-built candidate, not deployed
 
-This independent app edits and runs self-contained SPICE netlists locally in a
-browser worker. It has voltage-divider and RC-transient examples, a simple
-plot, local upload, and open/save through the desktop's My files account
-service. This is a text-based circuit editor, not a graphical schematic or PCB
-editor. It runs on demand and terminates the worker on completion, stop or app
-close. It accepts one `.op`, `.tran`, `.ac`, or `.dc` analysis and a limited
-set of directives; `.include`, `.lib`, and interactive `.control` commands are
-not supported. These restrictions are usability and resource limits, not a
-security boundary. Large analyses may use significant browser memory before
-the 30-second timeout.
+This app edits and runs self-contained SPICE netlists locally in a browser
+worker. It includes voltage-divider and RC-transient examples, a simple plot,
+local upload, and open/save through the desktop's browser-first My files and
+account service. This is a text-based circuit editor, not a graphical schematic
+or PCB editor. It runs on demand, ends the worker on completion, stop or app
+close, and times out after 30 seconds. It accepts one `.op`, `.tran`, `.ac`,
+or `.dc` analysis and a limited set of directives; `.include`, `.lib`, and
+interactive `.control` commands are not supported. These restrictions are
+usability and resource limits, not a security boundary. Difficult simulations
+may use significant browser memory before the timeout.
 
-## Distribution blocker
+The runtime engine is built locally from the pinned sources below; the opaque
+prebuilt npm WASM is no longer a dependency. The generated app provides
+**Source and relinking materials** and **License notices** links. The source
+archive is about 48.5 MB and is fetched only when requested, not on app launch.
 
-**Do not add this app to a release until the LGPL source and relinking or
-replacement requirements have been reviewed, packaged and tested.** The
-first prototype used the prebuilt `eecircuit-engine@1.9.0` npm package, whose
-MIT wrapper notice did not establish the source and licenses of the embedded
-ngspice binary or model cards. That opaque package is no longer a dependency;
-the app imports only the local `codi-ngspice` research build described below.
+## Release status and limits
 
-A source-built candidate has passed a 5 V divider and an RC transient test,
-and an isolated real desktop/account-server test saved and synced a circuit,
-then reopened and ran it in a fresh phone-sized Chrome context. Phone-sized
-means viewport emulation, not a physical phone. These tests establish behavior,
-not legal clearance, full ngspice feature support, or cross-system reproducibility.
+**Do not deploy this candidate until the source package, notices, and LGPL
+relinking approach receive final distribution review.** A cleaned source and
+relink package was technically tested from a separate extracted directory with
+the original build tree unavailable. It includes modified and original source,
+linkable objects, build scripts and notices. The test rebuilt a modified LGPL
+`numparam` library, relinked it, verified the modified text in the resulting
+WASM, and solved the 5 V divider. The independently relinked engine also passed
+an isolated actual account-server save/sync and fresh phone-sized browser
+reopen test. These are technical checks, not a legal determination.
 
-## Pinned research build
+The extracted-directory test used the same Linux x86-64 machine with the pinned
+Emscripten SDK installed separately. It downloads lockfile-pinned npm build
+packages. It is not a different operating system, a second physical machine,
+or an offline-from-empty-machine test. Two clean builds in the same environment
+produced identical WASM and wrapper hashes; cross-platform reproducibility is
+not established. Phone-sized testing used viewport emulation.
 
-The recipe is `build-source.sh`; it only writes generated files under an
-ignored work directory and `node_modules/codi-ngspice`. It fetches and verifies:
+The ngspice configuration disables XSPICE, OSDI and CIDER, but enables KLU and
+`frontend/numparam`, identified as LGPL in the
+[ngspice 45.2 license inventory](https://github.com/danchitnis/ngspice-sf-mirror/blob/ngspice-45.2/COPYING).
+The package includes ngspice's COPYING, the wrapper's MIT license, Emscripten
+and runtime notices, and the original SuiteSparse 3.7.0 AMD, BTF, KLU and COLAMD
+notices. It includes the AMD attribution and “Used by permission” wording from
+its original README. Review the actual linked component inventory, bundled
+notices, availability of corresponding sources and the LGPL relinking method
+before release; a technical success alone does not settle those obligations.
 
-- ngspice 45.2 source archive, SHA-256
-  `3aa30022e975bc04e2d9566e62e76d15e108d7b887f520755383ba37464c2324`;
-- EEcircuit wrapper source commit `424c21eb9f9bb91e72c1befe2d7fc2f09641316c`,
-  archive SHA-256
-  `e847152a73df19d7a3ece07cd60c63ec7e47e038d2dd615d5dd5cce0515e8d6b`;
-- Emscripten 4.0.14, release `4658718c188782acc67a249d45fce2d891ee3cc1`,
-  Linux x86-64, with checked SHA-256 values for clang, wasm-ld and emcc.py.
+## Build and package
 
-The recipe applies the wrapper's HICUM2 removal and asynchronous input
-patches, disables XSPICE, OSDI, CIDER and bundled model-card injection, fixes
-`SOURCE_DATE_EPOCH`, and builds with four jobs by default. The tested host has
-Autoconf 2.71, Automake 1.16.5, Libtool 2.4.7, Make 4.3, Python 3.12.3, and
-SDK Node 24.19.0; exact versions of the first three and Node are checked. The
-fixed Emscripten SDK must be installed and activated separately. From the
-SIMPLIFIED root:
+On the verified Linux x86-64 environment, install and activate Emscripten
+4.0.14 separately, then run from the SIMPLIFIED root:
 
 ```
 CODI_EMSDK=/absolute/path/to/emsdk apps/system/circuit-lab/build-source.sh
 npm test --prefix apps/system/circuit-lab
+curl -fL https://people.engr.tamu.edu/davis/SuiteSparse/SuiteSparse-3.7.0.tar.gz -o .build/suitesparse-3.7.0.tar.gz
+python3 apps/system/circuit-lab/package-source.py --output apps/system/circuit-lab/node_modules/codi-ngspice/source-relink.zip
 ```
 
-The research SDK was installed using the emsdk repository at commit
-`d7b4130688bfa348392b921ab04015aa15c4f154` and `emsdk install 4.0.14` /
-`emsdk activate 4.0.14`. The Linux x86-64 release archive for that SDK resolved
-to `4658718c188782acc67a249d45fce2d891ee3cc1` and had SHA-256
-`4f83b1ef38c4d4c6df1ad6d9ae9970fb1f4bda7342c5860868d1825f4460b27c`.
-The build script checks selected installed executable hashes, not every file
-in the SDK; verify the full SDK archive independently when provisioning it.
+The final command validates the SuiteSparse notice archive, checks that the
+installed wrapper matches the just-built source tree, and creates the on-demand
+archive and adjacent `NOTICES.txt`. The normal app builder then includes both
+explicitly declared assets. Package only after all source changes are final,
+because the archive includes the host integration source and test. The source
+and binary must come from the same build. The package checks for workstation
+home-directory paths and excludes configure logs, account data, databases and
+keys. The archive is a generated build artifact, not source-backup material.
 
-The script requires a fresh work directory. Set `CODI_NGSPICE_WORK` to another
-unused path for a second build; `CODI_BUILD_JOBS` controls parallelism. The
-build leaves original source archives, patched source, configure/make logs and
-the compiled object tree in its work directory for audit. Both the manual
-research build and one clean scripted build passed the solver and browser/
-account tests. The scripted build produced ngspice WASM SHA-256
+The build requires a fresh `.build/circuit-lab-source` directory. Use
+`CODI_NGSPICE_WORK` for another unused location and `CODI_BUILD_JOBS` to set
+parallelism. `SOURCE_DATE_EPOCH` is fixed. Original source archives, patched
+source, logs and the object tree remain in the build directory for audit.
+
+Pinned inputs:
+
+- ngspice 45.2 source archive SHA-256
+  `3aa30022e975bc04e2d9566e62e76d15e108d7b887f520755383ba37464c2324`;
+- EEcircuit wrapper commit `424c21eb9f9bb91e72c1befe2d7fc2f09641316c`, source
+  archive SHA-256
+  `e847152a73df19d7a3ece07cd60c63ec7e47e038d2dd615d5dd5cce0515e8d6b`;
+- SuiteSparse 3.7.0 original notice archive SHA-256
+  `3340ec0508d0680451bcc7d7581d04942c58b07cc71dfb7e13d0718060c911d9`;
+- Emscripten 4.0.14 Linux x86-64 release
+  `4658718c188782acc67a249d45fce2d891ee3cc1`, archive SHA-256
+  `4f83b1ef38c4d4c6df1ad6d9ae9970fb1f4bda7342c5860868d1825f4460b27c`.
+
+The research SDK was provisioned using emsdk commit
+`d7b4130688bfa348392b921ab04015aa15c4f154`, `emsdk install 4.0.14` and
+`emsdk activate 4.0.14`. The script checks installed clang, wasm-ld and emcc.py
+hashes, not every SDK file; verify the complete archive independently. It also
+checks Autoconf 2.71, Automake 1.16.5, Libtool 2.4.7 and SDK Node 24.19.0. The
+tested host used Make 4.3 and Python 3.12.3. Two clean builds on that host
+produced WASM SHA-256
 `c6ad5a9d87a7a1bddc83d23f16918fd6f521c5ed990b1e876bef9835483cb31b`
 and wrapper SHA-256
 `534904ee934de1ab70050e17cd7b5e1484b9abb2f4721786a5571de23223249b`.
-A second clean scripted build must be compared before calling the recipe
-reproducible. Generated dependencies, WASM and object files are not
-source-backup material.
 
-For a bounded development-tree relink experiment, run
-`apps/system/circuit-lab/test-relink.sh` after a successful source build. It
-copies the retained build tree to temporary storage, modifies an LGPL
-`numparam` diagnostic string, rebuilds that library and relinks the existing
-objects, checks that the changed string is in the resulting WASM, and runs the
-5 V divider through the rebuilt wrapper. Both the original manual and the
-scripted experiment passed. This checks technical relinking in a retained
-development tree; its generated Makefiles still refer to the original build
-path. It does not show that an independent recipient has all required inputs.
+## Independent relink and application tests
 
-The source-build candidate is deliberately not a distribution package. It
-does not yet include a tested complete corresponding-source archive, all
-notices, or a verified method and materials to modify and relink or replace
-LGPL components. The ngspice configuration disables XSPICE, OSDI and CIDER,
-but includes KLU and `frontend/numparam`, which the
-[ngspice 45.2 license inventory](https://github.com/danchitnis/ngspice-sf-mirror/blob/ngspice-45.2/COPYING)
-identifies as LGPL. Audit the actual linked components, package appropriate
-license texts and corresponding source, and prove the replacement/relink
-workflow before shipping. A separate legal review may be appropriate.
+To test the packaged materials, choose a new empty destination and run:
 
-## Tests
+```
+CODI_EMSDK=/absolute/path/to/emsdk apps/system/circuit-lab/verify-portable.sh \
+  apps/system/circuit-lab/node_modules/codi-ngspice/source-relink.zip \
+  /absolute/path/to/new-extraction-directory
+```
 
-`npm test --prefix apps/system/circuit-lab` runs the real source-built engine
-against the divider and RC examples. Build the engine first. The durable
+The verifier checks source and binary hashes, relocates generated build paths,
+installs the wrapper's lockfile-pinned build dependencies, modifies and
+rebuilds the LGPL component in a temporary copy, relinks, and runs the example.
+Its `relinked/` output is a test artifact; it is not the original candidate.
+The tested archive scan found no workstation home-directory references or
+private database/key files.
+
 `tests/circuit-account-browser.test.mjs` exercises a loopback-only isolated
-preview, actual account-server synchronization, and a fresh phone-sized
-browser. For test staging only, build this app under the `arduino-simulator`
-entry alias, launch an isolated preview on port 18180, and connect a Chromium
-debugging endpoint on port 19255. The test creates a disposable account. Do not
-use a live or non-loopback server for it.
+preview, actual account-server synchronization, a fresh phone-sized browser,
+and the visible source and notice links. Set `CIRCUIT_SOURCE_PATH` to the
+candidate archive so the test compares its hash with the served asset. For
+test staging only, build this app under the `arduino-simulator` entry alias,
+launch an isolated preview on port 18180, and connect a Chromium debugging
+endpoint on port 19255. The test creates a disposable account; do not use a
+live or non-loopback server.
 
-The engine wrapper embeds its WASM as a data URL. The worker decodes that local
+The wrapper embeds its WASM as a data URL. The worker decodes that local
 payload itself because the desktop's `connect-src 'self'` blocks fetching data
 URLs. No site-wide CSP change or network fetch is required for simulation.

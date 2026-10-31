@@ -1,1 +1,1 @@
-{"workers":{"spice":"worker.mjs"}}
+{"workers":{"spice":"worker.mjs"},"assets":["node_modules/codi-ngspice/NOTICES.txt","node_modules/codi-ngspice/source-relink.zip"]}
