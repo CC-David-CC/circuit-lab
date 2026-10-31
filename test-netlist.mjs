@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { validateNetlist, EXAMPLES } from './netlist.mjs';
-import { Simulation } from 'eecircuit-engine';
+import { Simulation } from './node_modules/codi-ngspice/dist/eecircuit-engine.mjs';
 assert.throws(() => validateNetlist('Example\n.include private\n.op\n.end'), /not supported/);
 assert.throws(() => validateNetlist('Example\n.control\nshell true\n.endc\n.end'), /not supported/);
 const sim = new Simulation(); await sim.start();

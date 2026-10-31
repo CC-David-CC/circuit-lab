@@ -1,7 +1,7 @@
-import { Simulation } from 'eecircuit-engine';
+import { Simulation } from './node_modules/codi-ngspice/dist/eecircuit-engine.mjs';
 import { validateNetlist } from './netlist.mjs';
 
-// The published engine embeds its WASM as a data URL. Decode that local
+// The built engine embeds its WASM as a data URL. Decode that local
 // module ourselves: the desktop's connect-src correctly disallows fetching
 // data URLs, even though no network request is necessary here.
 const nativeFetch = globalThis.fetch;
