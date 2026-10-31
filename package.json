@@ -1,0 +1,1 @@
+{"name":"codi-circuit-lab","version":"0.1.0","private":true,"type":"module","scripts":{"test":"node test-netlist.mjs"},"dependencies":{"eecircuit-engine":"1.9.0"}}

@@ -1,0 +1,14 @@
+import assert from 'node:assert/strict';
+import { validateNetlist, EXAMPLES } from './netlist.mjs';
+import { Simulation } from 'eecircuit-engine';
+assert.throws(() => validateNetlist('Example\n.include private\n.op\n.end'), /not supported/);
+assert.throws(() => validateNetlist('Example\n.control\nshell true\n.endc\n.end'), /not supported/);
+const sim = new Simulation(); await sim.start();
+sim.setNetList(validateNetlist(EXAMPLES.divider));
+const dc = await sim.runSim(), out = dc.data.find(s => s.name === 'v(out)');
+assert.ok(out && Math.abs(out.values[0] - 5) < 1e-8, 'divider produces 5 V');
+sim.setNetList(validateNetlist(EXAMPLES.rc));
+const transient = await sim.runSim(), voltage = transient.data.find(s => s.name === 'v(out)');
+assert.ok(transient.numPoints > 100 && voltage && Math.abs(voltage.values.at(-1) - 4.9663) < 0.01, 'RC response matches the expected exponential');
+console.log('Real ngspice divider and RC transient: PASS');
+process.exit(0);
