@@ -172,3 +172,9 @@ netlist in a fresh browser context, and run the actual ngspice divider example.
 The test does not cover physical touch, all SPICE models, or every solver error.
 Regenerate the matching source and relinking archive before any further
 packaging; the distribution-review gate above still applies.
+
+Release gate: the current desktop close guard does not observe Circuit Lab's
+internal unsaved-netlist state. Closing its window can discard edits without a
+confirmation. Integrate and test the close and in-flight save guards with the
+desktop host before shipping this app. The distribution review above also
+remains required.
