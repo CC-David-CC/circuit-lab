@@ -1,7 +1,15 @@
 #!/usr/bin/env python3
 """Verify the actual app-builder bundle against its source/relink package."""
-import argparse, hashlib, json, pathlib, re, runpy
+import argparse, hashlib, json, pathlib, re, runpy, zipfile
 APP=pathlib.Path(__file__).resolve().parent
+
+def audit_app_sources(archive, app=APP):
+    # These are the app inputs consumed by the builder. An engine-only match
+    # does not establish that the source archive describes the shipped app.
+    with zipfile.ZipFile(archive) as bundle:
+        for name in ('index.mjs','netlist.mjs','worker.mjs','style.css','app.json'):
+            if bundle.read('app/'+name)!=(app/name).read_bytes():
+                raise ValueError('Packaged app source differs: '+name)
 
 def main():
     parser=argparse.ArgumentParser(description=__doc__)
@@ -21,6 +29,7 @@ def main():
         if hashlib.sha256(path.read_bytes()).hexdigest()!=record.get('files',{}).get(name,{}).get('sha256'):raise ValueError('Bundle/catalog hash mismatch: '+name)
     auditor=runpy.run_path(str(APP/'audit-package.py'))['audit']
     result=auditor(bundle/paths[2],APP/'node_modules/codi-ngspice/dist/eecircuit-engine.mjs',bundle/paths[3],bundle/paths[1])
+    audit_app_sources(bundle/paths[2])
     print(json.dumps(result,indent=2));print('PASS built worker, source package, notices and catalog agree; distribution review remains required.')
 
 if __name__=='__main__':main()

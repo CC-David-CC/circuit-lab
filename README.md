@@ -11,6 +11,14 @@ interactive `.control` commands are not supported. These restrictions are
 usability and resource limits, not a security boundary. Difficult simulations
 may use significant browser memory before the timeout.
 
+The local candidate uses the desktop confirmation before replacing unsaved
+netlists, reports immediate save conflicts, and cancels old simulations when
+the netlist changes. A browser test with a simulated worker and file service
+checks these guards; it is not an end-to-end account or solver test. Changes
+made while a replacement confirmation is open are kept. Repackage the research
+source archive after changing the app: the builder audit checks the packaged
+app inputs against the current app sources as well as the solver and notices.
+
 The runtime engine is built locally from the pinned sources below; the opaque
 prebuilt npm WASM is no longer a dependency. The generated app provides
 **Source and relinking materials** and **License notices** links. The source
