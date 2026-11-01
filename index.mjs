@@ -9,7 +9,7 @@ export function mount(host) {
   const status = make('p','circuit-status','Choose an example or open a SPICE netlist.'), table = make('pre','circuit-results'), canvas = document.createElement('canvas');
   canvas.width = 900; canvas.height = 300; canvas.setAttribute('aria-label','Circuit simulation plot'); canvas.hidden = true;
   const input = document.createElement('input'); input.type = 'file'; input.accept = '.cir,.sp,.spice,.txt'; input.setAttribute('aria-label','Upload circuit file');
-  let disposed = false, worker = null, generation = 0, timer = null, version = null, savedPath = null, dirty = false, busy = false, revision = 0;
+  let disposed = false, worker = null, generation = 0, timer = null, version = null, savedPath = null, dirty = false, busy = false, revision = 0, documentEpoch = 0;
   const valid = () => !disposed && !host.signal.aborted && owner === signedInSubject();
   const tell = text => { if (valid()) status.textContent = text; };
   const cancel = () => { generation++; worker?.terminate(); worker = null; clearTimeout(timer); timer = null; };
@@ -40,9 +40,39 @@ export function mount(host) {
     }};
     worker.onerror=()=>{if(current===generation){cancel();tell('Could not start the simulation worker.');}};worker.postMessage({type:'run',netlist:source.value});
   }
-  async function replace(text,expected=revision) { if(dirty&&!await host.ui.confirm('Discard unsaved netlist changes?',{title:'Unsaved changes',confirmLabel:'Discard changes',cancelLabel:'Keep editing',danger:true,signal:host.signal}))return false;if(!valid())return false;if(revision!==expected){tell('The netlist changed while opening. Try again.');return false;}cancel();source.value=text;revision++;dirty=true;version=null;savedPath=null;canvas.hidden=true;table.textContent='';return true; }
+  async function replace(text,expected=revision) { if(dirty&&!await host.ui.confirm('Discard unsaved netlist changes?',{title:'Unsaved changes',confirmLabel:'Discard changes',cancelLabel:'Keep editing',danger:true,signal:host.signal}))return false;if(!valid())return false;if(revision!==expected){tell('The netlist changed while opening. Try again.');return false;}cancel();source.value=text;revision++;documentEpoch++;dirty=true;version=null;savedPath=null;canvas.hidden=true;table.textContent='';return true; }
   async function open() { const expected=revision;try { const p=await host.storage.pickFile({extensions:['.cir','.sp','.spice','.txt'],signal:host.signal});if(!p||!valid())return;const c=await mirrorFileContext(),f=await c.files.read(p);if(!valid()||!c.valid())return;if(f.status==='conflict')throw Error('Resolve this file conflict in Files first.');const text=new TextDecoder('utf-8',{fatal:true}).decode(f.data);validateNetlist(text);if(!await replace(text,expected)||!c.valid())return;savedPath=p;version=f.version;path.value=p;dirty=false;tell('Opened '+p+'.');}catch(e){tell('Could not open circuit: '+e.message);} }
-  async function save() { if(busy)return;busy=true;try{const netlist=validateNetlist(source.value),target=path.value,previousPath=savedPath,previousVersion=version,captured=revision,c=await mirrorFileContext(),p=c.path(target);if(!/\.(cir|sp|spice|txt)$/i.test(p))throw Error('Choose a .cir, .sp, .spice, or .txt filename.');if(!valid()||!c.valid())return;const r=await c.files.write(p,netlist,p===previousPath?previousVersion:null);if(!valid()||!c.valid())return;if(revision!==captured){tell(r.status==='conflict'?'Earlier edits saved on this device, but the circuit has conflicting copies. Resolve them in Files.':'Saved earlier edits; newer edits remain unsaved.');return;}version=r.version;savedPath=p;dirty=r.status==='conflict';tell(r.status==='conflict'?'Saved on this device, but the circuit has conflicting copies. Resolve them in Files.':'Saved on this device; syncing with the server.');}catch(e){tell('Could not save: '+e.message);}finally{busy=false;} }
+  async function save() {
+    if(busy)return;
+    busy=true;
+    try {
+      const netlist=validateNetlist(source.value), target=path.value, previousPath=savedPath,
+        previousVersion=version, captured=revision, epoch=documentEpoch, c=await mirrorFileContext(), p=c.path(target);
+      if(!/\.(cir|sp|spice|txt)$/i.test(p))throw Error('Choose a .cir, .sp, .spice, or .txt filename.');
+      if(!valid()||!c.valid())return;
+      let expected=null;
+      try {
+        const old=await c.files.stat(p);
+        if(old.status==='conflict')throw Error('Resolve this file conflict in Files first.');
+        if(p===previousPath && previousVersion) {
+          if(old.version!==previousVersion)throw Error('The saved circuit changed. Reopen it or save a copy.');
+        } else if(!await host.ui.confirm('Replace the existing circuit '+p+'?',{title:'Replace circuit',confirmLabel:'Replace',cancelLabel:'Cancel',danger:true,signal:host.signal})) {
+          tell('Circuit save cancelled.');return;
+        }
+        expected=old.version;
+      } catch(e) {
+        if(e.message!=='File not found.')throw e;
+        if(p===previousPath && previousVersion)throw Error('The saved circuit was removed. Reopen it or save a copy.');
+      }
+      if(!valid()||!c.valid())return;
+      const r=await c.files.write(p,netlist,expected);
+      if(!valid()||!c.valid())return;
+      if(documentEpoch!==epoch){tell('Saved the earlier circuit; the current circuit remains open.');return;}
+      version=r.version;savedPath=p;
+      dirty=revision!==captured||r.status==='conflict';
+      tell(r.status==='conflict'?'Saved on this device, but the circuit has conflicting copies. Resolve them in Files.':dirty?'Saved earlier edits; newer edits remain unsaved.':'Saved on this device; syncing with the server.');
+    } catch(e){tell('Could not save: '+e.message);} finally{busy=false;}
+  }
   source.addEventListener('input',()=>{const hadResults=worker||table.textContent;dirty=true;revision++;cancel();canvas.hidden=true;table.textContent='';if(hadResults)tell('Netlist changed. Run the simulation again.');});
   input.addEventListener('change',async()=>{const expected=revision;try{const f=input.files?.[0];if(!f)return;if(f.size>65536)throw Error('File exceeds 64 KiB.');const text=await f.text();validateNetlist(text);if(await replace(text,expected))tell('Imported '+f.name+'. Save it to My files to keep it.');}catch(e){tell('Could not import circuit: '+e.message);}finally{input.value='';}});
   toolbar.append(textButton('Voltage divider',async()=>{if(await replace(EXAMPLES.divider))tell('Voltage divider example loaded.');}),textButton('RC step',async()=>{if(await replace(EXAMPLES.rc))tell('RC step example loaded.');}),textButton('Basic MOSFET',async()=>{if(await replace(EXAMPLES.mos))tell('Basic illustrative MOSFET model loaded; this is not a foundry model.');}),textButton('Open My files',open),textButton('Run',run),textButton('Stop',()=>{cancel();tell('Simulation stopped.');}));

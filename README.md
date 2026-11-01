@@ -161,3 +161,14 @@ live or non-loopback server.
 The wrapper embeds its WASM as a data URL. The worker decodes that local
 payload itself because the desktop's `connect-src 'self'` blocks fetching data
 URLs. No site-wide CSP change or network fetch is required for simulation.
+
+The local save-flow candidate asks before replacing a different existing My files
+netlist and checks the file version again when writing. Changes made while that
+confirmation or save is pending remain unsaved in the editor; after the first
+write completes, saving again uses the new file version. A file modified by
+another writer during confirmation is not overwritten. Desktop and
+phone-sized local tests use an isolated real account service, reopen the synced
+netlist in a fresh browser context, and run the actual ngspice divider example.
+The test does not cover physical touch, all SPICE models, or every solver error.
+Regenerate the matching source and relinking archive before any further
+packaging; the distribution-review gate above still applies.
