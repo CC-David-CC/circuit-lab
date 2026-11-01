@@ -32,9 +32,16 @@ relink package is tested from a separate extracted directory with the original
 build tree unavailable. It includes modified source, exact original ngspice
 and wrapper source, linkable objects, scripts and notices. The test rebuilds a
 modified LGPL `numparam` library, relinks it, verifies its change in the
-resulting WASM, and solves the 5 V divider. A separate attempt to verify a KLU
-modification did not find the expected marker in the binary; KLU relinking is
-not yet verified. The independently relinked engine also passed
+resulting WASM, and solves the 5 V divider. An earlier KLU relink attempt did not find its marker. A later private
+experiment recorded a successful rebuild of modified `KLU_defaults`, a marker
+in the relinked WASM and the selected KLU runtime, and a 5 V divider result.
+The retained instrumented WASM and matching marker were checked again, but the
+runtime experiment was not rerun in this review. Its tested archive has a
+different whole-file hash from the current local research archive; its baseline
+solver, KLU source, KLU archive and link Makefile hashes match. See
+`docs/evidence/circuit-lab-klu-relink-receipt.json` at the repository root.
+This evidence does not verify every component or settle distribution terms.
+The independently relinked engine also passed
 an isolated actual account-server save/sync and fresh phone-sized browser
 reopen test. These are technical checks, not a legal determination.
 
