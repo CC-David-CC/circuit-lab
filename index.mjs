@@ -2,6 +2,7 @@ import './style.css';
 import { EXAMPLES, validateNetlist } from './netlist.mjs';
 
 export function mount(host) {
+  const operations = host.documentOperations; if (!operations) throw Error('Document operation service is required.');
   const { make, textButton } = host.ui, { mirrorFileContext, signedInSubject } = host.storage;
   const owner = signedInSubject(), body = make('div','window-content circuit-lab'), toolbar = make('div','circuit-toolbar');
   const source = document.createElement('textarea'); source.className = 'circuit-source'; source.spellcheck = false; source.value = EXAMPLES.divider; source.setAttribute('aria-label','SPICE netlist');
@@ -41,13 +42,14 @@ export function mount(host) {
     worker.onerror=()=>{if(current===generation){cancel();tell('Could not start the simulation worker.');}};worker.postMessage({type:'run',netlist:source.value});
   }
   async function replace(text,expected=revision) { if(dirty&&!await host.ui.confirm('Discard unsaved netlist changes?',{title:'Unsaved changes',confirmLabel:'Discard changes',cancelLabel:'Keep editing',danger:true,signal:host.signal}))return false;if(!valid())return false;if(revision!==expected){tell('The netlist changed while opening. Try again.');return false;}cancel();source.value=text;revision++;documentEpoch++;dirty=true;version=null;savedPath=null;canvas.hidden=true;table.textContent='';return true; }
-  async function open() { const expected=revision;try { const p=await host.storage.pickFile({extensions:['.cir','.sp','.spice','.txt'],signal:host.signal});if(!p||!valid())return;const c=await mirrorFileContext(),f=await c.files.read(p);if(!valid()||!c.valid())return;if(f.status==='conflict')throw Error('Resolve this file conflict in Files first.');const text=new TextDecoder('utf-8',{fatal:true}).decode(f.data);validateNetlist(text);if(!await replace(text,expected)||!c.valid())return;savedPath=p;version=f.version;path.value=p;dirty=false;tell('Opened '+p+'.');}catch(e){tell('Could not open circuit: '+e.message);} }
+  async function open() { if(busy||!valid())return;const op=operations.begin('load');if(!op){tell('Another file operation is in progress.');return;}busy=true;const expected=revision;try { const selected=await host.storage.pickFile({extensions:['.cir','.sp','.spice','.txt'],signal:op.signal});if(!selected||!valid()||!op.current())return;const c=await mirrorFileContext(),p=c.path(selected);if(!op.claimDocument('mirror:'+p))throw Error('This file is busy in another window.');const f=typeof c.files.readBounded==='function'?await c.files.readBounded(p,65536,{signal:op.signal}):await c.files.read(p);if(!valid()||!c.valid())return;if(f.status==='conflict')throw Error('Resolve this file conflict in Files first.');const text=new TextDecoder('utf-8',{fatal:true}).decode(f.data);validateNetlist(text);if(!op.current()||!await replace(text,expected)||!c.valid()||!op.current())return;if(!op.setDocument('mirror:'+p))return;savedPath=p;version=f.version;path.value=p;dirty=false;tell('Opened '+p+'.');}catch(e){tell('Could not open circuit: '+e.message);}finally{busy=false;op.finish();} }
   async function save() {
-    if(busy)return;
-    busy=true;
+    if(busy||!valid())return;
+    const op=operations.begin('save');if(!op){tell('Another file operation is in progress.');return;}busy=true;
     try {
       const netlist=validateNetlist(source.value), target=path.value, previousPath=savedPath,
         previousVersion=version, captured=revision, epoch=documentEpoch, c=await mirrorFileContext(), p=c.path(target);
+      if(!op.claimDocument('mirror:'+p))throw Error('This file is busy in another window.');
       if(!/\.(cir|sp|spice|txt)$/i.test(p))throw Error('Choose a .cir, .sp, .spice, or .txt filename.');
       if(!valid()||!c.valid())return;
       let expected=null;
@@ -66,21 +68,25 @@ export function mount(host) {
       }
       if(!valid()||!c.valid())return;
       const r=await c.files.write(p,netlist,expected);
-      if(!valid()||!c.valid())return;
+      if(!valid()||!c.valid()||!op.current())return;
       if(documentEpoch!==epoch){tell('Saved the earlier circuit; the current circuit remains open.');return;}
+      if(!op.setDocument('mirror:'+p))return;
       version=r.version;savedPath=p;
       dirty=revision!==captured||r.status==='conflict';
       tell(r.status==='conflict'?'Saved on this device, but the circuit has conflicting copies. Resolve them in Files.':dirty?'Saved earlier edits; newer edits remain unsaved.':'Saved on this device; syncing with the server.');
-    } catch(e){tell('Could not save: '+e.message);} finally{busy=false;}
+    } catch(e){tell('Could not save: '+e.message);} finally{busy=false;op.finish();}
   }
   source.addEventListener('input',()=>{const hadResults=worker||table.textContent;dirty=true;revision++;cancel();canvas.hidden=true;table.textContent='';if(hadResults)tell('Netlist changed. Run the simulation again.');});
-  input.addEventListener('change',async()=>{const expected=revision;try{const f=input.files?.[0];if(!f)return;if(f.size>65536)throw Error('File exceeds 64 KiB.');const text=await f.text();validateNetlist(text);if(await replace(text,expected))tell('Imported '+f.name+'. Save it to My files to keep it.');}catch(e){tell('Could not import circuit: '+e.message);}finally{input.value='';}});
-  toolbar.append(textButton('Voltage divider',async()=>{if(await replace(EXAMPLES.divider))tell('Voltage divider example loaded.');}),textButton('RC step',async()=>{if(await replace(EXAMPLES.rc))tell('RC step example loaded.');}),textButton('Basic MOSFET',async()=>{if(await replace(EXAMPLES.mos))tell('Basic illustrative MOSFET model loaded; this is not a foundry model.');}),textButton('Open My files',open),textButton('Run',run),textButton('Stop',()=>{cancel();tell('Simulation stopped.');}));
-  const savebar=make('div','circuit-toolbar');savebar.append(path,textButton('Save to My files',save));
+  input.addEventListener('change',async()=>{if(busy||!valid()){input.value='';return;}const op=operations.begin('load');if(!op){input.value='';return;}busy=true;const expected=revision;try{const f=input.files?.[0];if(!f)return;if(f.size>65536)throw Error('File exceeds 64 KiB.');const text=await f.text();validateNetlist(text);if(op.current()&&await replace(text,expected)&&op.current()){op.setDocument(null);tell('Imported '+f.name+'. Save it to My files to keep it.');}}catch(e){tell('Could not import circuit: '+e.message);}finally{input.value='';busy=false;op.finish();}});
+  async function loadExample(text,message){if(busy||!valid())return;const op=operations.begin('load');if(!op)return;busy=true;try{if(await replace(text)&&op.current()){op.setDocument(null);tell(message);}}finally{busy=false;op.finish();}}
+  const openButton=textButton('Open My files',open), saveButton=textButton('Save to My files',save);
+  const unbind=[openButton,saveButton,input].map(control=>operations.bindControl(control));
+  toolbar.append(textButton('Voltage divider',()=>loadExample(EXAMPLES.divider,'Voltage divider example loaded.')),textButton('RC step',()=>loadExample(EXAMPLES.rc,'RC step example loaded.')),textButton('Basic MOSFET',()=>loadExample(EXAMPLES.mos,'Basic illustrative MOSFET model loaded; this is not a foundry model.')),openButton,textButton('Run',run),textButton('Stop',()=>{cancel();tell('Simulation stopped.');}));
+  const savebar=make('div','circuit-toolbar');savebar.append(path,saveButton);
   const note=make('p','circuit-note','Experimental SPICE netlist simulator running on your device. This is a text-based circuit editor, not a graphical schematic editor.');
   const sourceLink=document.createElement('a');sourceLink.href=new URL('./node_modules/codi-ngspice/source-relink.zip',import.meta.url).href;sourceLink.textContent='Source and relinking materials';
   const noticeLink=document.createElement('a');noticeLink.href=new URL('./node_modules/codi-ngspice/NOTICES.txt',import.meta.url).href;noticeLink.textContent='License notices';
   note.append(' ',sourceLink,' · ',noticeLink);
   body.append(toolbar,note,input,source,savebar,status,canvas,table);
-  return {element:body,dispose(){disposed=true;cancel();}};
+  return {element:body,dispose(){disposed=true;for(const release of unbind)release();cancel();}};
 }
