@@ -10,7 +10,7 @@ export function mount(host) {
   const status = make('p','circuit-status','Choose an example or open a SPICE netlist.'), table = make('pre','circuit-results'), canvas = document.createElement('canvas');
   canvas.width = 900; canvas.height = 300; canvas.setAttribute('aria-label','Circuit simulation plot'); canvas.hidden = true;
   const input = document.createElement('input'); input.type = 'file'; input.accept = '.cir,.sp,.spice,.txt'; input.setAttribute('aria-label','Upload circuit file');
-  let disposed = false, worker = null, generation = 0, timer = null, version = null, savedPath = null, dirty = false, busy = false, revision = 0, documentEpoch = 0;
+  let disposed = false, worker = null, generation = 0, timer = null, version = null, savedPath = null, dirty = false, busy = false, revision = 0, documentEpoch = 0, pickerOperation = null, picking = false;
   const valid = () => !disposed && !host.signal.aborted && owner === signedInSubject();
   const tell = text => { if (valid()) status.textContent = text; };
   const cancel = () => { generation++; worker?.terminate(); worker = null; clearTimeout(timer); timer = null; };
@@ -77,10 +77,14 @@ export function mount(host) {
     } catch(e){tell('Could not save: '+e.message);} finally{busy=false;op.finish();}
   }
   source.addEventListener('input',()=>{const hadResults=worker||table.textContent;dirty=true;revision++;cancel();canvas.hidden=true;table.textContent='';if(hadResults)tell('Netlist changed. Run the simulation again.');});
-  input.addEventListener('change',async()=>{if(busy||!valid()){input.value='';return;}const op=operations.begin('load');if(!op){input.value='';return;}busy=true;const expected=revision;try{const f=input.files?.[0];if(!f)return;if(f.size>65536)throw Error('File exceeds 64 KiB.');const text=await f.text();validateNetlist(text);if(op.current()&&await replace(text,expected)&&op.current()){op.setDocument(null);tell('Imported '+f.name+'. Save it to My files to keep it.');}}catch(e){tell('Could not import circuit: '+e.message);}finally{input.value='';busy=false;op.finish();}});
+  const updateInput=()=>{input.disabled=operations.busy&&!picking;};
+  const unbindInput=operations.subscribe(updateInput);
+  input.addEventListener('click',event=>{if(picking||busy||!valid()){event.preventDefault();return;}picking=true;const op=operations.begin('load');if(!op){picking=false;updateInput();event.preventDefault();tell('Another file operation is in progress.');return;}pickerOperation=op;busy=true;});
+  input.addEventListener('cancel',()=>{const op=pickerOperation;pickerOperation=null;picking=false;if(op){busy=false;op.finish();}updateInput();});
+  input.addEventListener('change',async()=>{let op=pickerOperation;pickerOperation=null;picking=false;if(!op){if(busy||!valid()){input.value='';updateInput();return;}op=operations.begin('load');if(!op){input.value='';updateInput();return;}busy=true;}updateInput();const expected=revision;try{const f=input.files?.[0];if(!f)return;if(f.size>65536)throw Error('File exceeds 64 KiB.');const text=await f.text();validateNetlist(text);if(op.current()&&await replace(text,expected)&&op.current()){op.setDocument(null);tell('Imported '+f.name+'. Save it to My files to keep it.');}}catch(e){tell('Could not import circuit: '+e.message);}finally{input.value='';busy=false;op.finish();}});
   async function loadExample(text,message){if(busy||!valid())return;const op=operations.begin('load');if(!op)return;busy=true;try{if(await replace(text)&&op.current()){op.setDocument(null);tell(message);}}finally{busy=false;op.finish();}}
   const openButton=textButton('Open My files',open), saveButton=textButton('Save to My files',save);
-  const unbind=[openButton,saveButton,input].map(control=>operations.bindControl(control));
+  const unbind=[openButton,saveButton].map(control=>operations.bindControl(control));updateInput();
   toolbar.append(textButton('Voltage divider',()=>loadExample(EXAMPLES.divider,'Voltage divider example loaded.')),textButton('RC step',()=>loadExample(EXAMPLES.rc,'RC step example loaded.')),textButton('Basic MOSFET',()=>loadExample(EXAMPLES.mos,'Basic illustrative MOSFET model loaded; this is not a foundry model.')),openButton,textButton('Run',run),textButton('Stop',()=>{cancel();tell('Simulation stopped.');}));
   const savebar=make('div','circuit-toolbar');savebar.append(path,saveButton);
   const note=make('p','circuit-note','Experimental SPICE netlist simulator running on your device. This is a text-based circuit editor, not a graphical schematic editor.');
@@ -88,5 +92,5 @@ export function mount(host) {
   const noticeLink=document.createElement('a');noticeLink.href=new URL('./node_modules/codi-ngspice/NOTICES.txt',import.meta.url).href;noticeLink.textContent='License notices';
   note.append(' ',sourceLink,' · ',noticeLink);
   body.append(toolbar,note,input,source,savebar,status,canvas,table);
-  return {element:body,dispose(){disposed=true;for(const release of unbind)release();cancel();}};
+  return {element:body,dispose(){disposed=true;pickerOperation?.finish();pickerOperation=null;unbindInput();for(const release of unbind)release();cancel();}};
 }
