@@ -2,7 +2,7 @@
 # Experimental source build; output is local and is not yet a release package.
 set -euo pipefail
 app_dir=$(cd "$(dirname "$0")" && pwd)
-root=$(cd "$app_dir/../../.." && pwd)
+root=$app_dir
 work=${CODI_NGSPICE_WORK:-"$root/.build/circuit-lab-source"}
 sdk=${CODI_EMSDK:-"$root/.build/ngspice-emsdk"}
 ngsha=3aa30022e975bc04e2d9566e62e76d15e108d7b887f520755383ba37464c2324

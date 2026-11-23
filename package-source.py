@@ -3,7 +3,7 @@
 import argparse, hashlib, json, os, pathlib, runpy, tarfile, zipfile
 
 APP = pathlib.Path(__file__).resolve().parent
-ROOT = APP.parents[2]
+ROOT = APP
 NG = 'ngspice-sf-mirror-ngspice-45.2'
 EE = 'EEcircuit-engine-424c21eb9f9bb91e72c1befe2d7fc2f09641316c'
 ORIGINAL_ENGINE_SHA='e847152a73df19d7a3ece07cd60c63ec7e47e038d2dd615d5dd5cce0515e8d6b'

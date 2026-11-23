@@ -27,7 +27,10 @@ def main():
         path=bundle/name
         if path.is_symlink() or not path.is_file():raise ValueError('Missing or linked bundle file: '+name)
         if hashlib.sha256(path.read_bytes()).hexdigest()!=record.get('files',{}).get(name,{}).get('sha256'):raise ValueError('Bundle/catalog hash mismatch: '+name)
-    auditor=runpy.run_path(str(APP/'audit-package.py'))['audit']
+    with zipfile.ZipFile(bundle/paths[2]) as source:
+        browser=json.loads(source.read('package.json')).get('format')=='codi-ngspice-browser/1'
+    script,method=('package-browser-release.py','audit_browser') if browser else ('audit-package.py','audit')
+    auditor=runpy.run_path(str(APP/script))[method]
     result=auditor(bundle/paths[2],APP/'node_modules/codi-ngspice/dist/eecircuit-engine.mjs',bundle/paths[3],bundle/paths[1])
     audit_app_sources(bundle/paths[2])
     print(json.dumps(result,indent=2));print('PASS built worker, source package, notices and catalog agree; distribution review remains required.')
