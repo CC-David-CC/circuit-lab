@@ -7,12 +7,13 @@ const revisionPattern = /^[a-f0-9]{64}$/;
 const encode = new TextEncoder();
 const decode = new TextDecoder('utf-8', {fatal: true});
 
-function circuitPath(value) {
-  const path = value.replace(/^(?:webos:)?\//, '');
+function circuitPath(value, addDefaultExtension = false) {
+  const path = value.replace(/^(?:(?:webos|browser):)?\//, '');
   const parts = path.split('/');
   if (parts[0] === '.app' || parts.some(part => !part || part === '.' || part === '..' || /[\\\u0000]/.test(part))) {
     throw Error('Choose a valid path in My files.');
   }
+  if (addDefaultExtension && !parts.at(-1).includes('.')) return path + '.cir';
   if (!extensions.some(ext => path.toLowerCase().endsWith(ext))) {
     throw Error('Choose a .cir, .sp, .spice, or .txt filename.');
   }
@@ -27,7 +28,8 @@ export function mount(host) {
   const signal = AbortSignal.any([abort.signal, host.signal]);
   const body = make('div','window-content circuit-lab'), toolbar = make('div','circuit-toolbar');
   const source = document.createElement('textarea'); source.className = 'circuit-source'; source.spellcheck = false; source.value = EXAMPLES.divider; source.setAttribute('aria-label','SPICE netlist');
-  const path = document.createElement('input'); path.value = '/Circuit-' + crypto.randomUUID() + '.cir'; path.setAttribute('aria-label','Circuit file path');
+  source.setAttribute('autocapitalize', 'off');
+  const path = document.createElement('input'); path.value = '/Voltage divider.cir'; path.setAttribute('aria-label','Circuit file path');
   const status = make('p','circuit-status','Choose an example or open a SPICE netlist.'), table = make('pre','circuit-results'), canvas = document.createElement('canvas');
   status.setAttribute('role', 'status');
   canvas.width = 900; canvas.height = 300; canvas.setAttribute('aria-label','Circuit simulation plot'); canvas.hidden = true;
@@ -41,18 +43,24 @@ export function mount(host) {
   function plot(series) {
     canvas.hidden = true;
     const x = series.find(s => ['time','frequency'].includes(s.type)) || series.find(s => ['time','frequency'].includes(s.name));
-    const y = series.find(s => s.type === 'voltage' && s !== x);
+    const y = series.find(s => s.name === 'v(out)') ?? series.find(s => s.type === 'voltage' && s !== x);
     if (!x || !y || x.values.length < 2) return;
     const magnitude = v => typeof v === 'number' ? v : Math.hypot(v?.real || 0,v?.img || 0);
     const pairs = x.values.map((v,i) => [magnitude(v), magnitude(y.values[i])]).filter(v => v.every(Number.isFinite));
     if (pairs.length < 2) return;
     const xmin = Math.min(...pairs.map(p=>p[0])), xmax = Math.max(...pairs.map(p=>p[0]));
     const ymin = Math.min(...pairs.map(p=>p[1])), ymax = Math.max(...pairs.map(p=>p[1]));
-    const ctx = canvas.getContext('2d'), w = canvas.width, h = canvas.height, left=75, top=20, right=20, bottom=40;
-    ctx.fillStyle='#fff';ctx.fillRect(0,0,w,h);ctx.strokeStyle='#768392';ctx.strokeRect(left,top,w-left-right,h-top-bottom);
-    ctx.fillStyle='#243142';ctx.font='16px sans-serif';ctx.fillText(y.name + (typeof y.values[0] === 'number' ? '' : ' magnitude'),left,16);ctx.fillText(x.name,left,h-8);
+    canvas.hidden = false;
+    const w = canvas.clientWidth || 390, h = Math.max(160, Math.round(w / 3)), ratio = Math.min(2, devicePixelRatio);
+    canvas.width = Math.round(w * ratio);
+    canvas.height = Math.round(h * ratio);
+    const colors = getComputedStyle(canvas);
+    const ctx = canvas.getContext('2d'), left=63, top=23, right=14, bottom=32;
+    ctx.setTransform(ratio, 0, 0, ratio, 0, 0);
+    ctx.strokeStyle=colors.borderColor;ctx.strokeRect(left,top,w-left-right,h-top-bottom);
+    ctx.fillStyle=colors.color;ctx.font='14px system-ui';ctx.fillText(y.name + (typeof y.values[0] === 'number' ? '' : ' magnitude'),left,17);ctx.fillText(x.name,left,h-8);
     ctx.fillText(ymax.toPrecision(4),4,top+9);ctx.fillText(ymin.toPrecision(4),4,h-bottom);
-    ctx.strokeStyle='#2265b0';ctx.lineWidth=2;ctx.beginPath();pairs.forEach(([a,b],i)=>{const px=left+(a-xmin)/(xmax-xmin||1)*(w-left-right),py=top+(ymax-b)/(ymax-ymin||1)*(h-top-bottom);i?ctx.lineTo(px,py):ctx.moveTo(px,py)});ctx.stroke();canvas.hidden=false;
+    ctx.strokeStyle=colors.color;ctx.lineWidth=2;ctx.beginPath();pairs.forEach(([a,b],i)=>{const px=left+(a-xmin)/(xmax-xmin||1)*(w-left-right),py=top+(ymax-b)/(ymax-ymin||1)*(h-top-bottom);i?ctx.lineTo(px,py):ctx.moveTo(px,py)});ctx.stroke();
   }
   function run() {
     if (!valid() || busy || picking || transferring) return;
@@ -148,7 +156,8 @@ export function mount(host) {
 
   function save() {
     return fileTask('Could not save circuit. ', async () => {
-      const target = circuitPath(path.value);
+      const enteredPath = path.value;
+      const target = circuitPath(enteredPath.trim(), true);
       const bytes = encode.encode(validateNetlist(source.value));
       if (bytes.byteLength > maxBytes) throw Error('File exceeds 64 KiB.');
       const captured = revision;
@@ -171,6 +180,7 @@ export function mount(host) {
       }
       if (!revisionPattern.test(result.sha256)) throw Error('Files did not confirm the save.');
       bind({path: target, sha256: result.sha256});
+      if (path.value === enteredPath) path.value = '/' + target;
       dirty = revision !== captured;
       tell(dirty ? 'Saved earlier edits. Newer edits remain unsaved.' : 'Saved ' + target + '.');
     });
@@ -194,28 +204,34 @@ export function mount(host) {
         const expected = revision;
         if (file.size > maxBytes) throw Error('File exceeds 64 KiB.');
         const text = validateNetlist(decode.decode(await file.arrayBuffer()));
-        if (await replace(text, null, expected)) tell('Imported ' + file.name + '. Save it to My files to keep it.');
+        if (await replace(text, null, expected)) {
+          path.value = extensions.some(ext => file.name.toLowerCase().endsWith(ext)) ? '/' + file.name : '/Circuit.cir';
+          tell('Imported ' + file.name + '. Save it to My files to keep it.');
+        }
       });
     } finally {
       input.value = '';
     }
   });
 
-  function loadExample(text, message) {
+  function loadExample(text, name, message) {
     return fileTask('Could not load example. ', async () => {
-      if (await replace(text, null, revision)) tell(message);
+      if (await replace(text, null, revision)) {
+        path.value = '/' + name + '.cir';
+        tell(message);
+      }
     });
   }
 
   const openButton = textButton('Open My files', open);
   const saveButton = textButton('Save to My files', save);
-  toolbar.append(textButton('Voltage divider',()=>loadExample(EXAMPLES.divider,'Voltage divider example loaded.')),textButton('RC step',()=>loadExample(EXAMPLES.rc,'RC step example loaded.')),textButton('Basic MOSFET',()=>loadExample(EXAMPLES.mos,'Basic illustrative MOSFET model loaded; this is not a foundry model.')),openButton,textButton('Run',run),textButton('Stop',()=>{cancel();tell('Simulation stopped.');}));
+  toolbar.append(textButton('Voltage divider',()=>loadExample(EXAMPLES.divider,'Voltage divider','Voltage divider example loaded.')),textButton('RC step',()=>loadExample(EXAMPLES.rc,'RC step','RC step example loaded.')),textButton('Basic MOSFET',()=>loadExample(EXAMPLES.mos,'Basic MOSFET','Basic illustrative MOSFET model loaded.')),openButton,textButton('Run',run),textButton('Stop',()=>{cancel();tell('Simulation stopped.');}));
   const savebar=make('div','circuit-toolbar');savebar.append(path,saveButton);
-  const note=make('p','circuit-note','Experimental SPICE netlist simulator running on your device. This is a text-based circuit editor, not a graphical schematic editor.');
+  const note=make('p','circuit-note','ngspice runs on this device.');
   const sourceLink=document.createElement('a');sourceLink.href=new URL('./node_modules/codi-ngspice/source-relink.zip',import.meta.url).href;sourceLink.textContent='Source and relinking materials';
   const noticeLink=document.createElement('a');noticeLink.href=new URL('./node_modules/codi-ngspice/NOTICES.txt',import.meta.url).href;noticeLink.textContent='License notices';
   note.append(' ',sourceLink,' · ',noticeLink);
-  body.append(toolbar,note,input,source,savebar,status,canvas,table);
+  body.append(toolbar,input,source,savebar,status,canvas,table,note);
 
   const ready = (async () => {
     context = await host.storage.workspaceFileContext();
